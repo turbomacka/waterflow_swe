@@ -12,17 +12,26 @@ class MapStationSelectorScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final prov = context.watch<StationProvider>();
 
+    Color markerColor(StationProvider p, String id) {
+      final hasF = p.hasFlow(p.stations.firstWhere((s) => s.id == id,
+          orElse: () => p.selected!));
+      final hasL = p.hasLevel(p.stations.firstWhere((s) => s.id == id,
+          orElse: () => p.selected!));
+      if (hasF && hasL) return Colors.purple;
+      return hasF ? Colors.red : Colors.blue;
+    }
+
     final markers = prov.stations
         .where((s) => s.latitude != null && s.longitude != null)
         .map<Marker>(
           (s) => Marker(
             point: LatLng(s.latitude!, s.longitude!),
-            width: 45,
-            height: 45,
+            width: 36,
+            height: 36,
             child: GestureDetector(
               onTap: () => prov.selectStation(s),
-              child: const Icon(Icons.location_on,
-                  color: Colors.redAccent, size: 40),
+              child: Icon(Icons.location_on,
+                  color: markerColor(prov, s.id), size: 34),
             ),
           ),
         )
@@ -53,15 +62,14 @@ class MapStationSelectorScreen extends StatelessWidget {
                     size: const Size(40, 40),
                     builder: (context, clusterMarkers) => Container(
                       decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.8),
+                        color: Colors.grey.shade700,
                         shape: BoxShape.circle,
                       ),
                       alignment: Alignment.center,
                       child: Text(
                         '${clusterMarkers.length}',
                         style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold),
+                            color: Colors.white, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ),

@@ -26,9 +26,29 @@ class _StationSelectorScreenState extends State<StationSelectorScreen> {
     final prov = context.watch<StationProvider>();
     final fmtTime = DateFormat.Hm();
 
+    Widget paramIcon(Station s) {
+      final hasF = prov.hasFlow(s);
+      final hasL = prov.hasLevel(s);
+      if (hasF && hasL) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.water, color: Colors.red, size: 16),
+            SizedBox(width: 2),
+            Icon(Icons.straighten, color: Colors.blue, size: 16),
+          ],
+        );
+      }
+      return Icon(
+        hasF ? Icons.water : Icons.straighten,
+        color: hasF ? Colors.red : Colors.blue,
+        size: 16,
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('SMHI – Vattenflöde'),
+        title: const Text('SMHI – Flöde & Nivå'),
         actions: [
           IconButton(
             icon: const Icon(Icons.map),
@@ -52,7 +72,27 @@ class _StationSelectorScreenState extends State<StationSelectorScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── FilterChip “Nära mig” ───────────────────────────
+              /* ── Mät‑parameter‑växling ─────────────────────── */
+              SegmentedButton<HydroMode>(
+                segments: const [
+                  ButtonSegment(
+                    value: HydroMode.flow,
+                    icon: Icon(Icons.water),
+                    label: Text('Flöde'),
+                  ),
+                  ButtonSegment(
+                    value: HydroMode.level,
+                    icon: Icon(Icons.straighten),
+                    label: Text('Vattenstånd'),
+                  ),
+                ],
+                selected: {prov.mode},
+                onSelectionChanged: (s) =>
+                    context.read<StationProvider>().setMode(s.first),
+              ),
+              const SizedBox(height: 12),
+
+              /* ── FilterChip “Nära mig” ────────────────────── */
               FilterChip(
                 label: const Text('Visa enbart stationer nära mig'),
                 avatar: const Icon(Icons.my_location, size: 20),
@@ -60,17 +100,16 @@ class _StationSelectorScreenState extends State<StationSelectorScreen> {
                 onSelected: (_) async {
                   await context.read<StationProvider>().toggleNearMode();
                   if (prov.error != null && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(prov.error!)),
-                    );
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(SnackBar(content: Text(prov.error!)));
                   }
                 },
               ),
               const SizedBox(height: 24),
 
-              // ── Dropdown med (filtrerade) stationer ────────────
+              /* ── Station‑lista ───────────────────────────── */
               if (prov.stations.isEmpty)
-                const Text('Inga stationer inom 50 km.'),
+                const Text('Inga stationer i listan.'),
               if (prov.stations.isNotEmpty)
                 DropdownButton<Station>(
                   value: prov.selected,
@@ -79,17 +118,22 @@ class _StationSelectorScreenState extends State<StationSelectorScreen> {
                   items: prov.stations
                       .map((s) => DropdownMenuItem(
                             value: s,
-                            child: Text(s.name),
+                            child: Row(
+                              children: [
+                                paramIcon(s),
+                                const SizedBox(width: 6),
+                                Flexible(child: Text(s.name)),
+                              ],
+                            ),
                           ))
                       .toList(),
                   onChanged: (s) {
                     if (s != null) prov.selectStation(s);
                   },
                 ),
-
               const SizedBox(height: 24),
 
-              // ── Data / laddning / fel ─────────────────────────
+              /* ── Data / laddning / fel ───────────────────── */
               if (prov.isLoading && prov.selected != null)
                 const CircularProgressIndicator(),
               if (prov.error != null && prov.selected != null)
@@ -107,7 +151,9 @@ class _StationSelectorScreenState extends State<StationSelectorScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '${prov.current!.value.toStringAsFixed(2)} m³/s',
+                          prov.mode == HydroMode.flow
+                              ? '${prov.current!.value.toStringAsFixed(2)} m³/s'
+                              : '${prov.current!.value.toStringAsFixed(2)} m',
                           style: Theme.of(context).textTheme.headlineMedium,
                         ),
                         const SizedBox(height: 4),

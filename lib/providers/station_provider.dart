@@ -5,36 +5,44 @@ import '../models/station_model.dart';
 import '../models/flow_obs.dart';
 import '../services/smhi_api_service.dart';
 
+enum HydroMode { flow, level }
+
 class StationProvider extends ChangeNotifier {
   final _api = SmhiApiService();
   final _dist = Distance();
 
-  /* ── Station‑lista ─────────────────────────────────────────── */
-  List<Station> _allStations = [];
+  /* ── Två listor + id‑set för snabb lookup ───────────────── */
+  List<Station> _flowStations = [];
+  List<Station> _levelStations = [];
+  final _flowIds = <String>{};
+  final _levelIds = <String>{};
 
-  /* ── “nära mig”‑läge ───────────────────────────────────────── */
+  /* ── När‑mig‑filter ─────────────────────────────────────── */
   Position? _userPos;
   static const double _radiusKm = 50;
   bool _nearMode = false;
 
-  /* ── Vald station & flöden ─────────────────────────────────── */
+  /* ── State för UI ────────────────────────────────────────── */
+  HydroMode _mode = HydroMode.flow;
   Station? _selected;
   FlowObs? _current;
   FlowObs? _previous;
-
-  /* ── Laddning & fel ────────────────────────────────────────── */
   bool _loading = false;
   String? _error;
 
-  /* ── Publika getters ───────────────────────────────────────── */
-  List<Station> get stations => _nearMode && _userPos != null
-      ? _filterNear(_allStations)
-      : _allStations;
+  /* ── Publika getters ─────────────────────────────────────── */
+  List<Station> get stations {
+    List<Station> base =
+        _mode == HydroMode.flow ? _flowStations : _levelStations;
+    if (_nearMode && _userPos != null) base = _filterNear(base);
+    return base;
+  }
+
+  bool hasFlow(Station s) => _flowIds.contains(s.id);
+  bool hasLevel(Station s) => _levelIds.contains(s.id);
 
   bool get isNearMode => _nearMode;
-  LatLng? get userLatLng =>
-      _userPos == null ? null : LatLng(_userPos!.latitude, _userPos!.longitude);
-
+  HydroMode get mode => _mode;
   Station? get selected => _selected;
   FlowObs? get current => _current;
   FlowObs? get previous => _previous;
@@ -46,12 +54,23 @@ class StationProvider extends ChangeNotifier {
           ? _current!.value > _previous!.value
           : null;
 
-  /* ── Ladda stationer ───────────────────────────────────────── */
+  LatLng? get userLatLng =>
+      _userPos == null ? null : LatLng(_userPos!.latitude, _userPos!.longitude);
+
+  /* ── Ladda stationer för båda parametrar ────────────────── */
   Future<void> loadStations() async {
     _loading = true;
     _error = null;
+    notifyListeners();
     try {
-      _allStations = await _api.fetchStations();
+      final results = await Future.wait([
+        _api.fetchStations(SmhiApiService.paramFlow),
+        _api.fetchStations(SmhiApiService.paramLevel),
+      ]);
+      _flowStations = results[0];
+      _levelStations = results[1];
+      _flowIds.addAll(_flowStations.map((s) => s.id));
+      _levelIds.addAll(_levelStations.map((s) => s.id));
     } catch (e) {
       _error = e.toString();
     } finally {
@@ -60,7 +79,46 @@ class StationProvider extends ChangeNotifier {
     }
   }
 
-  /* ── “Nära mig”‑knapp ──────────────────────────────────────── */
+  /* ── Växla param‑läge ───────────────────────────────────── */
+  Future<void> setMode(HydroMode m) async {
+    if (_mode == m) return;
+    _mode = m;
+    _selected = null;
+    _current = _previous = null;
+    notifyListeners();
+  }
+
+  /* ── Välj station & hämta obs ───────────────────────────── */
+  Future<void> selectStation(Station s) async {
+    _selected = s;
+    await _fetchObsForSelected();
+  }
+
+  Future<void> _fetchObsForSelected() async {
+    if (_selected == null) return;
+    _current = _previous = null;
+    _error = null;
+    _loading = true;
+    notifyListeners();
+
+    final pid = _mode == HydroMode.flow
+        ? SmhiApiService.paramFlow
+        : SmhiApiService.paramLevel;
+
+    try {
+      final obs =
+          await _api.fetchLatestValues(_selected!.id, paramId: pid, take: 2);
+      if (obs.isNotEmpty) _current = obs.last;
+      if (obs.length > 1) _previous = obs[obs.length - 2];
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
+  }
+
+  /* ── “Nära mig” ‑toggle ─────────────────────────────────── */
   Future<void> toggleNearMode() async {
     if (_nearMode) {
       _nearMode = false;
@@ -68,15 +126,13 @@ class StationProvider extends ChangeNotifier {
       return;
     }
     try {
-      final perm = await Geolocator.checkPermission();
+      var perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
-        if (await Geolocator.requestPermission() ==
-            LocationPermission.denied) {
-          throw 'Plats­tillstånd nekat';
-        }
+        perm = await Geolocator.requestPermission();
       }
-      if (perm == LocationPermission.deniedForever) {
-        throw 'Plats­tillstånd permanent nekat';
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        throw 'Plats­tillstånd saknas';
       }
       _userPos = await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.high);
@@ -87,6 +143,7 @@ class StationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /* ── Hjälpare för radie‑filter ──────────────────────────── */
   List<Station> _filterNear(List<Station> list) {
     if (_userPos == null) return [];
     return list
@@ -99,25 +156,5 @@ class StationProvider extends ChangeNotifier {
                 _radiusKm * 1000)
         .toList()
       ..sort((a, b) => a.name.compareTo(b.name));
-  }
-
-  /* ── Välj station ──────────────────────────────────────────── */
-  Future<void> selectStation(Station station) async {
-    _selected = station;
-    _current = _previous = null;
-    _error = null;
-    _loading = true;
-    notifyListeners();
-
-    try {
-      final obs = await _api.fetchLatestValues(station.id, take: 2);
-      if (obs.isNotEmpty) _current = obs.last;
-      if (obs.length > 1) _previous = obs[obs.length - 2];
-    } catch (e) {
-      _error = e.toString();
-    } finally {
-      _loading = false;
-      notifyListeners();
-    }
   }
 }

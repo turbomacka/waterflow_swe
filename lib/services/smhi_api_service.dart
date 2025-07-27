@@ -7,55 +7,53 @@ import '../models/flow_obs.dart';
 class SmhiApiService {
   static const _base =
       'https://opendata-download-hydroobs.smhi.se/api/version/1.0';
-  static const _parameter = '1'; // vattenföring m³/s
 
-  /// Hämta *aktiva* stationer sorterade alfabetiskt.
-  Future<List<Station>> fetchStations() async {
-    final url = Uri.parse('$_base/parameter/$_parameter/station.json');
+  /* ── Parameter‑ID:n vi stödjer ───────────────────────────── */
+  static const paramFlow  = '1'; // vattenföring
+  static const paramLevel = '5'; // vattenstånd
+
+  /* ── Hämta stationer för valfri parameter ────────────────── */
+  Future<List<Station>> fetchStations(String paramId) async {
+    final url = Uri.parse('$_base/parameter/$paramId/station.json');
     final res = await http.get(url);
     if (res.statusCode != 200) {
-      throw Exception('Kunde inte hämta stationer (HTTP ${res.statusCode})');
+      throw Exception('station.json (param $paramId) gav HTTP ${res.statusCode}');
     }
 
     final decoded = jsonDecode(res.body) as Map<String, dynamic>;
     final list = (decoded['station'] ?? decoded['value']) as List<dynamic>;
-
     return list
         .cast<Map<String, dynamic>>()
-        .where((e) =>
-            (e['active'] as bool?) ?? true) // filtrera inaktiva stationer
+        .where((e) => (e['active'] as bool?) ?? true)
         .map(Station.fromJson)
         .toList()
       ..sort((a, b) => a.name.compareTo(b.name));
   }
 
-  /// Hämta de `take` senaste observationerna med fallback‑logik.
-  /// Returnerar **tom lista** om ingen data finns i någon endpoint.
-  Future<List<FlowObs>> fetchLatestValues(String stationId,
-      {int take = 2}) async {
+  /* ── Hämta senaste observation(er) ───────────────────────── */
+  Future<List<FlowObs>> fetchLatestValues(
+    String stationId, {
+    required String paramId,
+    int take = 2,
+  }) async {
     // 1) senaste dygnet
-    var obs = await _getValues(stationId, 'latest-day');
-    if (obs.length >= take) {
-      return _tail(obs, take);
-    }
+    var obs = await _getValues(stationId, paramId, 'latest-day');
+    if (obs.length >= take) return _tail(obs, take);
 
     // 2) senaste månaden
-    obs = await _getValues(stationId, 'latest-month');
-    if (obs.isNotEmpty) {
-      return _tail(obs, take);
-    }
+    obs = await _getValues(stationId, paramId, 'latest-month');
+    if (obs.isNotEmpty) return _tail(obs, take);
 
-    // 3) full historik (dygnsagg.)
-    obs = await _getValues(stationId, 'corrected-archive');
+    // 3) full historik
+    obs = await _getValues(stationId, paramId, 'corrected-archive');
     return _tail(obs, take);
   }
 
-  /* ── privata hjälpare ─────────────────────────────────────────────── */
-
-  /// Hämta *alla* obs. för önskat period‑segment.
-  Future<List<FlowObs>> _getValues(String id, String period) async {
-    final url = Uri.parse(
-        '$_base/parameter/$_parameter/station/$id/period/$period/data.json');
+  /* ── Interna hjälpare ───────────────────────────────────── */
+  Future<List<FlowObs>> _getValues(
+      String id, String param, String period) async {
+    final url =
+        Uri.parse('$_base/parameter/$param/station/$id/period/$period/data.json');
     final res = await http.get(url);
     if (res.statusCode != 200) return const [];
 

@@ -12,7 +12,7 @@ android {
     namespace = "com.example.wf3_app"
 
     compileSdk  = flutter.compileSdkVersion      // värden injiceras av Flutter‑plugin
-    ndkVersion  = flutter.ndkVersion
+    ndkVersion = "27.0.12077973"
 
     defaultConfig {
         // Blir även ditt Play Store‑id. Håll det i synk med namespace (så slipper du förvirring).
