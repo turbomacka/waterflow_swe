@@ -4,6 +4,9 @@
 
     <!-- Internet behövs för att hämta data från SMHI -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- GPS-tillsånd -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
 
     <application
         android:label="SMHI Hydro"

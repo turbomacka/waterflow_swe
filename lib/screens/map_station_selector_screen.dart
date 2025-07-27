@@ -12,7 +12,6 @@ class MapStationSelectorScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final prov = context.watch<StationProvider>();
 
-    // Bygg markörer av stationer med giltiga koordinater
     final markers = prov.stations
         .where((s) => s.latitude != null && s.longitude != null)
         .map<Marker>(
@@ -29,14 +28,17 @@ class MapStationSelectorScreen extends StatelessWidget {
         )
         .toList();
 
+    final initCenter = prov.userLatLng ?? const LatLng(62.0, 15.0);
+    final initZoom = prov.userLatLng != null ? 8.5 : 4.8;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Välj station på karta')),
       body: prov.stations.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : FlutterMap(
               options: MapOptions(
-                initialCenter: const LatLng(62.0, 15.0), // mitten av SE
-                initialZoom: 4.8,
+                initialCenter: initCenter,
+                initialZoom: initZoom,
                 maxZoom: 15,
               ),
               children: [
@@ -46,9 +48,9 @@ class MapStationSelectorScreen extends StatelessWidget {
                 ),
                 MarkerClusterLayerWidget(
                   options: MarkerClusterLayerOptions(
+                    markers: markers,
                     maxClusterRadius: 50,
                     size: const Size(40, 40),
-                    markers: markers,
                     builder: (context, clusterMarkers) => Container(
                       decoration: BoxDecoration(
                         color: Colors.blue.withOpacity(0.8),
@@ -58,7 +60,8 @@ class MapStationSelectorScreen extends StatelessWidget {
                       child: Text(
                         '${clusterMarkers.length}',
                         style: const TextStyle(
-                            color: Colors.white, fontWeight: FontWeight.bold),
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold),
                       ),
                     ),
                   ),
